@@ -67,9 +67,9 @@ let rec runCommand state (line, cmd) =
   
   // TODO: Implement assignment and conditional. Assignment should run the
   // next line after setting the variable value. 'If' is a bit trickier:
-  // * 'l1: IF TRUE THEN GOTO <l1>' will continue evaluating on line 'l2'
-  // * 'l1: IF FALSE THEN GOTO <l1>' will continue on line after 'l1'
-  // * 'l1: IF TRUE THEN PRINT "HI"' will print HI and continue on line after 'l1'
+  // * 'L1: IF TRUE THEN GOTO <L2>' will continue evaluating on line 'L2'
+  // * 'L1: IF FALSE THEN GOTO <L2>' will continue on line after 'L1'
+  // * 'L1: IF TRUE THEN PRINT "HI"' will print HI and continue on line after 'L1'
   //
   // HINT: If <e> evaluates to TRUE, you can call 'runCommand' recursively with
   // the command in the 'THEN' branch and the current line as the line number.
