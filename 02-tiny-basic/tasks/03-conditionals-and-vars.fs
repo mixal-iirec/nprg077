@@ -107,7 +107,8 @@ let testVariables =
     Some 30, Assign("B", Function("=", [Variable("I"); Const(NumberValue 1)]))
     Some 40, Print(Variable "S") 
     Some 50, Print(Variable "I") 
-    Some 60, Print(Variable "B") ]
+    Some 60, Print(Variable "B")
+    None, Run ]
 
 // NOTE: Simpler test program without 'If" (just variables and '=' function) 
 runInputs empty testVariables |> ignore
