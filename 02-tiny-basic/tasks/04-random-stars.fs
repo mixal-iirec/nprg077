@@ -16,6 +16,7 @@ type Expression =
 type Command = 
   | Print of Expression
   | Run 
+  | Stop
   | Goto of int
   | Assign of string * Expression
   | If of Expression * Command
@@ -28,57 +29,106 @@ type Command =
 type State = 
   { Program : list<int * Command> 
     Variables : Map<string, Value> 
-    // TODO: You will need to include random number generator in the state!
+    Random : System.Random
     }
 
 // ----------------------------------------------------------------------------
 // Utilities
 // ----------------------------------------------------------------------------
 
-let printValue value = failwith "implemented in steps 1 and 3"
-let getLine state line = failwith "implemented in step 1"
-let addLine state (line, cmd) = failwith "implemented in step 2"
+let printValue value =
+  match value with
+  | StringValue str -> System.Console.Write (str)
+  | NumberValue num -> System.Console.Write (num)
+  | BoolValue b -> System.Console.Write (b)
+
+let getLine state line =
+  List.tryFind (fun (l, _) -> l >= line) state.Program |> Option.defaultValue (-1, Stop)
+
+let addLine state (line, cmd) = 
+  {state with Program = (line, cmd) :: (List.filter (fun (l, _) -> l <> line) state.Program) |> List.sortBy (fst)}
 
 // ----------------------------------------------------------------------------
 // Evaluator
 // ----------------------------------------------------------------------------
 
-// NOTE: Helper function that makes it easier to implement '>' and '<' operators
-// (takes a function 'int -> int -> bool' and "lifts" it into 'Value -> Value -> Value')
 let binaryRelOp f args = 
   match args with 
   | [NumberValue a; NumberValue b] -> BoolValue(f a b)
   | _ -> failwith "expected two numerical arguments"
 
-let rec evalExpression expr = 
-  // TODO: Add support for 'RND(N)' which returns a random number in range 0..N-1
-  // and for binary operators ||, <, > (and the ones you have already, i.e., - and =).
-  // To add < and >, you can use the 'binaryRelOp' helper above. You can similarly
-  // add helpers for numerical operators and binary Boolean operators to make
-  // your code a bit nicer.
-  failwith "implemented in steps 1 and 3"
+let rec evalExpression state expr = 
+  match expr with
+  | Const c -> c
+  | Variable v ->
+    match state.Variables.TryFind v with 
+    | Some res -> res
+    | _ -> failwith ("unbound variable: " + v)
+  | Function (name, lst) ->
+    let lst = List.map (fun exp -> evalExpression state exp) lst
+    match name with
+    | "-" ->
+      match lst with
+      | [NumberValue f; NumberValue s] -> NumberValue(f - s)
+      | _ -> failwith ("unsupported arguments: " + name)
+    | "=" -> 
+      match lst with
+      | [f;s] -> BoolValue (f = s)
+      | _ -> failwith ("unsupported number of arguments: " + name)
+    | "||" ->
+      match lst with
+      | [BoolValue f; BoolValue s] -> BoolValue(f || s)
+      | _ -> failwith ("unsupported arguments: " + name)
+    | "<" -> binaryRelOp (<) lst
+    | ">" -> binaryRelOp (>) lst
+    | "RND" ->
+      match lst with
+      | [NumberValue f] -> NumberValue(state.Random.Next(f))
+      | _ -> failwith ("unsupported arguments: " + name)
+    | _ -> failwith ("unknown function: " + name)
+
 
 let rec runCommand state (line, cmd) =
-  match cmd with 
-  | Run ->
-      let first = List.head state.Program    
-      runCommand state first
+  match cmd with
+  | Print(expr) ->
+      evalExpression state expr |> printValue
+      runNextLine state line
+  | Run -> getLine state 0 |> runCommand state
+  | Goto(line) -> getLine state line |> runCommand state
+  | Stop -> state
+  | Assign(name, exp) -> runNextLine {state with Variables = Map.add name (evalExpression state exp) state.Variables} line
+  | If (exp, cmd) ->
+    match evalExpression state exp with
+    | BoolValue true -> runCommand state (line, cmd)
+    | BoolValue false -> runNextLine state line
+    | _ -> failwith "only bools can be in if"
+  | Clear ->
+    System.Console.Clear ()
+    runNextLine state line
+  | Poke (x, y, s) ->
+    let x = evalExpression state x
+    let y = evalExpression state y
+    let s = evalExpression state s
+    match (x,y,s) with
+    | (NumberValue x, NumberValue y, StringValue s) ->
+      System.Console.SetCursorPosition(x, y)
+      System.Console.Write(s)
+    | _ -> failwith "unsupported arg"
+    runNextLine state line
 
-  | Print(expr) -> failwith "implemented in step 1"
-  | Goto(line) -> failwith "implemented in step 1"
-  | Assign _ | If _ -> failwith "implemented in step 3"
-  
-  // TODO: Implement two commands for screen manipulation
-  | Clear | Poke _ -> failwith "not implemented"
 
-and runNextLine state line = failwith "implemented in step 1"
+and runNextLine state line = getLine state (line+1) |> runCommand state
 
 // ----------------------------------------------------------------------------
 // Interactive program editing
 // ----------------------------------------------------------------------------
 
-let runInput state (line, cmd) = failwith "implemented in step 2"
-let runInputs state cmds = failwith "implemented in step 2"
+let runInput state (line, cmd) =
+  match line with
+  | Some line -> addLine state (line, cmd)
+  | None -> runCommand state (System.Int32.MaxValue, cmd)
+
+let runInputs state cmds = List.fold (fun state' cmd -> runInput state' cmd) state cmds
 
 // ----------------------------------------------------------------------------
 // Test cases
@@ -100,7 +150,7 @@ let (.-) a b = Function("-", [a; b])
 let (.=) a b = Function("=", [a; b])
 let (@) s args = Function(s, args)
 
-let empty = { Program = []; Variables = Map.empty } // TODO: Add random number generator!
+let empty = { Program = []; Variables = Map.empty; Random = System.Random.Shared }
 
 // NOTE: Random stars generation. This has hard-coded max width and height (60x20)
 // but you could use 'System.Console.WindowWidth'/'Height' here to make it nicer.

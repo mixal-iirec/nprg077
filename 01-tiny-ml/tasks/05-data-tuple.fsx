@@ -51,20 +51,48 @@ let rec evaluate (ctx:VariableContext) e =
       | Some res -> res
       | _ -> failwith ("unbound variable: " + v)
 
-  // NOTE: You have the following from before
-  | Unary(op, e) -> failwith "implemented in step 2"
-  | If(econd, etrue, efalse) -> failwith "implemented in step 2"
-  | Lambda(v, e) -> failwith "implemented in step 3"
-  | Application(e1, e2) -> failwith "implemented in step 3"
-  | Let(v, e1, e2) -> failwith "implemented in step 4"
+  | Unary(op, e) ->
+      let v = evaluate ctx e
+      match v with 
+      | ValNum n -> 
+        match op with 
+        | "-" -> ValNum(-n)
+        | _ -> failwith "unsupported unary operator"
+      | _ -> failwith "unary operator unsupported on closures"
+  | If (e1, e2, e3) ->
+      let v1 = evaluate ctx e1
+      let v2 = evaluate ctx e2
+      let v3 = evaluate ctx e3
+      match v1 with 
+      | ValNum n1 -> 
+            if n1 = 1 then v2 else v3
+      | _ -> failwith "bool evaluation unsupported on closures"
+  
+  | Lambda(v, e) -> ValClosure (v, e, ctx)
+
+  | Application(e1, e2) ->
+      let v1 = evaluate ctx e1
+      let v2 = evaluate ctx e2
+
+      match v1 with 
+      | ValClosure (v, e, ctx) -> 
+          let ctx = Map.add v v2 ctx
+          evaluate ctx e
+      | _ -> failwith "unsupported closure application"
+
+  | Let(v, e1, e2) ->
+      evaluate ctx (Application(Lambda(v, e2), e1))
 
   | Tuple(e1, e2) ->
-      // TODO: Construct a tuple value here!
-      failwith "not implemented"
+      let v1 = evaluate ctx e1
+      let v2 = evaluate ctx e2
+      ValTuple (v1, v2)
   | TupleGet(b, e) ->
-      // TODO: Access #1 or #2 element of a tuple value.
-      // (If the argument is not a tuple, this fails.)
-      failwith "not implemented"
+      let v = evaluate ctx e
+      match v with
+        | ValTuple (c1, c2) ->
+          if b then c1 else c2
+        | _ -> failwith "tuple access only supported on tuple"
 
 // ----------------------------------------------------------------------------
 // Test cases
@@ -77,17 +105,17 @@ let ed1=
   TupleGet(true, 
     Tuple(Binary("*", Constant(2), Constant(21)), 
       Constant(123)))
-evaluate Map.empty ed1
+printf "%A" (evaluate Map.empty ed1)
 
 let ed2 = 
   TupleGet(false, 
     Tuple(Binary("*", Constant(2), Constant(21)), 
       Constant(123)))
-evaluate Map.empty ed2
+printf "%A" (evaluate Map.empty ed2)
 
 // Data types - trying to get a first element of a value
 // that is not a tuple (This makes no sense and should fail)
 //   (42)#1
 let ed3 = 
   TupleGet(true, Constant(42))
-evaluate Map.empty ed3
+printf "%A" (evaluate Map.empty ed3)

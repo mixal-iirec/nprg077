@@ -44,9 +44,27 @@ let rec evaluate (ctx:VariableContext) e =
       | Some res -> res
       | _ -> failwith ("unbound variable: " + v)
   | Unary(op, e) ->
+      let v = evaluate ctx e
       // TODO: Implement the case for 'Unary' here!
-      failwith "not implemented"
+      match v with 
+      | ValNum n -> 
+        match op with 
+        | "-" -> ValNum(-n)
+        | _ -> failwith "unsupported unary operator"
   // TODO: Add the correct handling of 'If' here!
+  | If (e1, e2, e3) ->
+      let v1 = evaluate ctx e1
+      let v2 = evaluate ctx e2
+      let v3 = evaluate ctx e3
+      match v1, v2, v3 with 
+      | ValNum n1, ValNum n2, ValNum n3 -> 
+        ValNum (
+            if n1 = 1 then
+              n2
+            else
+              n3
+          )
+
 
 
 // ----------------------------------------------------------------------------
@@ -59,7 +77,7 @@ let euo =
     Binary("*", Constant(1), Constant(2)),
     Unary("-", Binary("*", Constant(-20), Constant(2)))
   )
-evaluate Map.empty euo
+printf "%A" (evaluate Map.empty euo)
 
 // Conditional expression: if 1 then 42 else 0
 let eif1 = 
@@ -67,7 +85,7 @@ let eif1 =
     Constant(42), 
     Constant(0)
   )
-evaluate Map.empty eif1
+printf "%A" (evaluate Map.empty eif1)
 
 // Conditional expression: if 5+(-4) then 21*2 else 0
 let eif2 = 
@@ -75,7 +93,7 @@ let eif2 =
     Binary("*", Constant(21), Constant(2)), 
     Constant(0)
   )
-evaluate Map.empty eif2
+printf "%A" (evaluate Map.empty eif2)
 
 // Conditional expression: if 5+4 then 0 else 21*2 
 let eif3 = 
@@ -83,6 +101,4 @@ let eif3 =
     Constant(0),
     Binary("*", Constant(21), Constant(2))
   )
-evaluate Map.empty eif3
-
-
+printf "%A" (evaluate Map.empty eif3)

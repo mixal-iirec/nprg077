@@ -37,12 +37,11 @@ and VariableContext =
 // ----------------------------------------------------------------------------
 
 let rec evaluate (ctx:VariableContext) e =
+  let eval = fun e -> evaluate ctx e
   match e with 
   | Constant n -> ValNum n
   | Binary(op, e1, e2) ->
-      let v1 = evaluate ctx e1
-      let v2 = evaluate ctx e2
-      match v1, v2 with 
+      match eval e1, eval e2 with 
       | ValNum n1, ValNum n2 -> 
           match op with 
           | "+" -> ValNum(n1 + n2)
@@ -51,31 +50,60 @@ let rec evaluate (ctx:VariableContext) e =
       | _ -> failwith "invalid argument of binary operator"
   | Variable(v) ->
       match ctx.TryFind v with 
-      | Some res ->
-          // NOTE: As 'res' is now 'Lazy<Value>' we need to get its value here.
-          res.Value
+      | Some res -> res.Value
       | _ -> failwith ("unbound variable: " + v)
 
-  // NOTE: You have the following from before
-  | Unary(op, e) -> failwith "implemented in step 2"
-  | If(econd, etrue, efalse) -> failwith "implemented in step 2"
-  | Lambda(v, e) -> failwith "implemented in step 3"
-  | Application(e1, e2) -> failwith "implemented in step 3"
-  | Let(v, e1, e2) -> failwith "implemented in step 4"
-  | Tuple(e1, e2) -> failwith "implemented in step 5"
-  | TupleGet(b, e) -> failwith "implemented in step 5"
-  | Match(e, v, e1, e2) -> failwith "implemented in step 6"
-  | Case(b, e) -> failwith "implemented in step 6"
+  | Unary(op, e) ->
+      match eval e with 
+      | ValNum n -> 
+        match op with 
+        | "-" -> ValNum(-n)
+        | _ -> failwith "unsupported unary operator"
+      | _ -> failwith "unary operator unsupported on closures"
+  | If (e1, e2, e3) ->
+      match eval e1 with 
+      | ValNum n1 -> if n1 = 1 then eval e2 else eval e3
+      | _ -> failwith "bool evaluation unsupported on non numbers"
+  
+  | Lambda(v, e) -> ValClosure (v, e, ctx)
 
-  | Recursive(v, e1, e2) ->
-      // TODO: Implement recursion for 'let rec v = e1 in e2'.
-      // (In reality, this will only work if 'e1' is a function
-      // but the case can be implemented without assuming that).
-      failwith "not implemented"
+  | Application(e1, e2) ->
+      match eval e1 with 
+      | ValClosure (v, e, ctx') ->
+          let ctx' = Map.add v (lazy (eval e2)) ctx'
+          evaluate ctx' e
+      | _ -> failwith "unsupported closure application"
+
+  | Let(v, e1, e2) -> evaluate ctx (Application(Lambda(v, e2), e1))
+  | Tuple(e1, e2) -> ValTuple (eval e1, eval e2)
+  | TupleGet(b, e) ->
+      match eval e with
+        | ValTuple (c1, c2) -> if b then c1 else c2
+        | _ -> failwith "tuple access only supported on tuple"
+
+  | Match(e, v, e1, e2) ->
+      match eval e with
+        | ValCase (b, v0) ->
+          let ctx' = Map.add v (lazy v0) ctx
+          let e = if b then e1 else e2
+          evaluate ctx' e
+        | _ -> failwith "matching without case unsupported"
+  | Case(b, e) -> ValCase (b, eval e)
+  | Recursive(v, e1, e2) -> 
+      let rec ctx' = Map.add v (lazy (evaluate ctx' e1)) ctx
+      evaluate ctx' e2
 
 // ----------------------------------------------------------------------------
 // Test cases
 // ----------------------------------------------------------------------------
+
+let er' = 
+  Recursive("factorial", 
+    Lambda("x", Variable("x")),
+    Application(Variable "factorial", Constant 5)
+  )
+printf "%A" (evaluate Map.empty er')
+
 
 // Recursion and conditionals - implementing factorial!
 //   let rec factorial = fun x -> 
@@ -94,4 +122,4 @@ let er =
     )),  
     Application(Variable "factorial", Constant 5)
   )
-evaluate Map.empty er
+printf "%A" (evaluate Map.empty er)

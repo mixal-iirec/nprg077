@@ -53,7 +53,7 @@ evaluate Map.empty eba1
 
 // Basic artihmetic with variables: x + (x*20)
 let eba2 = 
-  Binary("+", Variable("x"), 
+  Binary("+", Variable("x"),
     Binary("*", Variable("x"), Constant(20)))
 
 let ctx1 = Map.ofList ["x", ValNum 4]

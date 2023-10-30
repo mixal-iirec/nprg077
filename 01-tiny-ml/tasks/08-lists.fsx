@@ -37,6 +37,7 @@ and VariableContext =
 // ----------------------------------------------------------------------------
 
 let rec evaluate (ctx:VariableContext) e =
+  let eval = fun e -> evaluate ctx e
   match e with 
   | Constant n -> ValNum n
   | Binary(op, e1, e2) ->
@@ -47,6 +48,7 @@ let rec evaluate (ctx:VariableContext) e =
           match op with 
           | "+" -> ValNum(n1 + n2)
           | "*" -> ValNum(n1 * n2)
+          | "%" -> ValNum(n1 % n2)
           | _ -> failwith "unsupported binary operator"
       | _ -> failwith "invalid argument of binary operator"
   | Variable(v) ->
@@ -54,19 +56,45 @@ let rec evaluate (ctx:VariableContext) e =
       | Some res -> res.Value
       | _ -> failwith ("unbound variable: " + v)
 
-  // NOTE: You have the following from before
-  | Unary(op, e) -> failwith "implemented in step 2"
-  | If(econd, etrue, efalse) -> failwith "implemented in step 2"
-  | Lambda(v, e) -> failwith "implemented in step 3"
-  | Application(e1, e2) -> failwith "implemented in step 3"
-  | Let(v, e1, e2) -> failwith "implemented in step 4"
-  | Tuple(e1, e2) -> failwith "implemented in step 5"
-  | TupleGet(b, e) -> failwith "implemented in step 5"
-  | Match(e, v, e1, e2) -> failwith "implemented in step 6"
-  | Case(b, e) -> failwith "implemented in step 6"
-  | Recursive(v, e1, e2) -> failwith "implemented in step 7"
+  | Unary(op, e) ->
+      match eval e with 
+      | ValNum n -> 
+        match op with 
+        | "-" -> ValNum(-n)
+        | _ -> failwith "unsupported unary operator"
+      | _ -> failwith "unary operator unsupported on closures"
+  | If (e1, e2, e3) ->
+      match eval e1 with 
+      | ValNum n1 -> if n1 = 1 then eval e2 else eval e3
+      | _ -> failwith "bool evaluation unsupported on non numbers"
+  
+  | Lambda(v, e) -> ValClosure (v, e, ctx)
 
-  // NOTE: This is so uninteresting I did this for you :-)
+  | Application(e1, e2) ->
+      match eval e1 with 
+      | ValClosure (v, e, ctx') ->
+          let ctx' = Map.add v (lazy (eval e2)) ctx'
+          evaluate ctx' e
+      | _ -> failwith "unsupported closure application"
+
+  | Let(v, e1, e2) -> evaluate ctx (Application(Lambda(v, e2), e1))
+  | Tuple(e1, e2) -> ValTuple (eval e1, eval e2)
+  | TupleGet(b, e) ->
+      match eval e with
+        | ValTuple (c1, c2) -> if b then c1 else c2
+        | _ -> failwith "tuple access only supported on tuple"
+
+  | Match(e, v, e1, e2) ->
+      match eval e with
+        | ValCase (b, v0) ->
+          let ctx' = Map.add v (lazy v0) ctx
+          let e' = if b then e1 else e2
+          evaluate ctx' e'
+        | _ -> failwith "matching without case unsupported"
+  | Case(b, e) -> ValCase (b, eval e)
+  | Recursive(v, e1, e2) -> 
+      let rec ctx' = Map.add v (lazy (evaluate ctx' e1)) ctx
+      evaluate ctx' e2
   | Unit -> ValUnit
 
 
@@ -113,7 +141,7 @@ let em =
     Application(Application(Variable "map", 
       Lambda("y", Binary("*", Variable "y", Constant 10))), el)
   )
-evaluate Map.empty em
+printf "%A" (evaluate Map.empty em)
 
 // TODO: Can you implement 'List.filter' in TinyML too??
 // The somewhat silly example removes 3 from the list.
@@ -127,5 +155,42 @@ evaluate Map.empty em
 //     | Case2(Unit) -> Case2(Unit))
 //   in map (fun y -> y + (-2)) l
 //
-let ef = failwith "not implemented"
-evaluate Map.empty ef
+let ef = 
+  Recursive("filter",
+    Lambda("f", Lambda("l", 
+      Match(
+        Variable("l"), "x",
+        If (Application(Variable "f", TupleGet(true, Variable "x")),
+            Case(true, Tuple(
+              TupleGet(true, Variable "x"),
+              Application(Application(Variable "filter", Variable "f"), TupleGet(false, Variable "x"))
+            )),
+            Application(Application(Variable "filter", Variable "f"), TupleGet(false, Variable "x"))
+        ),
+        Case(false, Unit)
+      )
+    )),
+    Application(Application(Variable "filter", 
+      Lambda("y", If(Binary ("+", Variable "y", Constant -2), Constant 0, Constant 1))), el)
+  )
+printf "%A" (evaluate Map.empty ef)
+
+let efm = 
+  Recursive("filter",
+    Lambda("f", Lambda("l", 
+      Match(
+        Variable("l"), "x",
+        If (Application(Variable "f", TupleGet(true, Variable "x")),
+            Case(true, Tuple(
+              TupleGet(true, Variable "x"),
+              Application(Application(Variable "filter", Variable "f"), TupleGet(false, Variable "x"))
+            )),
+            Application(Application(Variable "filter", Variable "f"), TupleGet(false, Variable "x"))
+        ),
+        Case(false, Unit)
+      )
+    )),
+    Application(Application(Variable "filter", 
+      Lambda("y", If(Binary ("%", Variable "y", Constant 2), Constant 1, Constant 0))), el)
+  )
+printf "%A" (evaluate Map.empty efm)

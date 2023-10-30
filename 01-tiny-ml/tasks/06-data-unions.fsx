@@ -52,23 +52,65 @@ let rec evaluate (ctx:VariableContext) e =
       | Some res -> res
       | _ -> failwith ("unbound variable: " + v)
 
-  // NOTE: You have the following from before
-  | Unary(op, e) -> failwith "implemented in step 2"
-  | If(econd, etrue, efalse) -> failwith "implemented in step 2"
-  | Lambda(v, e) -> failwith "implemented in step 3"
-  | Application(e1, e2) -> failwith "implemented in step 3"
-  | Let(v, e1, e2) -> failwith "implemented in step 4"
-  | Tuple(e1, e2) -> failwith "implemented in step 5"
-  | TupleGet(b, e) -> failwith "implemented in step 5"
+  | Unary(op, e) ->
+      let v = evaluate ctx e
+      match v with 
+      | ValNum n -> 
+        match op with 
+        | "-" -> ValNum(-n)
+        | _ -> failwith "unsupported unary operator"
+      | _ -> failwith "unary operator unsupported on closures"
+  | If (e1, e2, e3) ->
+      let v1 = evaluate ctx e1
+      let v2 = evaluate ctx e2
+      let v3 = evaluate ctx e3
+      match v1 with 
+      | ValNum n1 -> 
+            if n1 = 1 then v2 else v3
+      | _ -> failwith "bool evaluation unsupported on closures"
+  
+  | Lambda(v, e) -> ValClosure (v, e, ctx)
+
+  | Application(e1, e2) ->
+      let v1 = evaluate ctx e1
+      let v2 = evaluate ctx e2
+
+      match v1 with 
+      | ValClosure (v, e, ctx) -> 
+          let ctx = Map.add v v2 ctx
+          evaluate ctx e
+      | _ -> failwith "unsupported closure application"
+
+  | Let(v, e1, e2) ->
+      evaluate ctx (Application(Lambda(v, e2), e1))
+
+  | Tuple(e1, e2) ->
+      let v1 = evaluate ctx e1
+      let v2 = evaluate ctx e2
+      ValTuple (v1, v2)
+  | TupleGet(b, e) ->
+      let v = evaluate ctx e
+      match v with
+        | ValTuple (c1, c2) ->
+          if b then c1 else c2
+        | _ -> failwith "tuple access only supported on tuple"
 
   | Match(e, v, e1, e2) ->
+      let v0 = evaluate ctx e
+      match v0 with
+        | ValCase (b, v0) ->
+          let ctx = Map.add v v0 ctx
+          let e = if b then e1 else e2
+          evaluate ctx e
+        | _ -> failwith "matching without case unsupported"
+      //let v1 = evaluate ctx e1
+      //let v2 = evaluate ctx e2
       // TODO: Implement pattern matching. Note you need to
       // assign the right value to the variable of name 'v'!
-      failwith "not implemented"
 
   | Case(b, e) ->
-      // TODO: Create a union value.
-      failwith "not implemented"
+      let v = evaluate ctx e
+      ValCase (b, v)
 
 // ----------------------------------------------------------------------------
 // Test cases
@@ -77,7 +119,7 @@ let rec evaluate (ctx:VariableContext) e =
 // Data types - creating a union value
 let ec1 =
   Case(true, Binary("*", Constant(21), Constant(2)))
-evaluate Map.empty ec1
+printf "%A" (evaluate Map.empty ec1)
 
 // Data types - working with union cases
 //   match Case1(21) with Case1(x) -> x*2 | Case2(x) -> x*100
@@ -87,11 +129,11 @@ let ec2 =
     Binary("*", Variable("x"), Constant(2)),
     Binary("*", Variable("x"), Constant(100))
   )
-evaluate Map.empty ec2
+printf "%A" (evaluate Map.empty ec2)
 
 let ec3 = 
   Match(Case(false, Constant(21)), "x", 
     Binary("*", Variable("x"), Constant(2)),
     Binary("*", Variable("x"), Constant(100))
   )
-evaluate Map.empty ec3
+printf "%A" (evaluate Map.empty ec3)
