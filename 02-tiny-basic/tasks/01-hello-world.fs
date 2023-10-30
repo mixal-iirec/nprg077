@@ -65,7 +65,7 @@ let rec runCommand state (line, cmd) =
 
 and runNextLine state line = 
   // TODO: Find a program line with the number greater than 'line' and evalaute
-  // it using 'evalExpression' (if found) or just return 'state' (if not found).
+  // it using 'runCommand' (if found) or just return 'state' (if not found).
   failwith "not implemented"
 
 // ----------------------------------------------------------------------------
