@@ -25,11 +25,15 @@ let rec substite (v:string) (subst:Number) (n:Number) =
 let substituteConstraints (v:string) (subst:Number) (constraints:list<Number * Number>) = 
   // TODO: Substitute 'v' for 'subst' (use 'substitute') in 
   // all numbers in all the constraints in 'constraints'
+  // HINT: You can use 'List.map' to implement this.
   constraints
 
 let substituteAll (subst:list<string * Number>) (n:Number) =
-  // TODO: Perform all substitutions 
-  // specified  in 'subst' on the number 'n'
+  // TODO: Perform all substitutions specified  in 'subst' on the number 'n'
+  // HINT: You can use 'List.fold' to implement this. Fold has a type:
+  //   ('State -> 'T -> 'State) -> 'State -> List<'T> -> 'State
+  // In this case, 'State will be the Number on which we want to apply 
+  // the substitutions and List<'T> will be a list of substitutions.
   n
 
 let rec solve constraints = 
@@ -40,7 +44,8 @@ let rec solve constraints =
   | (Zero, Zero)::constraints -> solve constraints
   | (Succ _, Zero)::_ | (Zero, Succ _)::_ -> 
       failwith "Cannot be solved"
-  | (n, Variable v)::constraints | (Variable v, n)::constraints ->
+  | (n, Variable v)::constraints 
+  | (Variable v, n)::constraints ->
       if occursCheck v n then failwith "Cannot be solved (occurs check)"
       let constraints = substituteConstraints v n constraints
       let subst = solve constraints
@@ -54,6 +59,10 @@ solve
 // Should faild: S(Z) <> Z
 solve 
   [ Succ(Succ(Zero)), Succ(Zero) ]
+
+// Should fail: No 'x' such that S(S(x)) = S(Z)
+solve 
+  [ Succ(Succ(Variable "x")), Succ(Zero) ]
 
 // Not done: Need to substitute x/Z in S(x)
 solve 
