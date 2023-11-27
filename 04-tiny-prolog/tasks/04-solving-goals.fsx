@@ -22,19 +22,42 @@ let rule p b = { Head = p; Body = b }
 // ----------------------------------------------------------------------------
 
 let rec substitute (subst:Map<string, Term>) term = 
-  failwith "implemented in step 2"
+  match term with
+  | Variable v -> if (Map.containsKey v subst) then (substitute subst subst[v]) else Variable v
+  | Atom a -> Atom a
+  | Predicate (p, l) -> Predicate (p, substituteTerms subst l)
 
-let substituteSubst (newSubst:Map<string, Term>) (subst:list<string * Term>) = 
-  failwith "implemented in step 2"
 
-let substituteTerms subst (terms:list<Term>) = 
-  failwith "implemented in step 2"
+and substituteSubst (newSubst:Map<string, Term>) (subst:list<string * Term>) = 
+  subst |> List.map (fun (n, t) -> n, substitute newSubst t)
+
+
+and substituteTerms subst (terms:list<Term>) = 
+  terms |> List.map (substitute subst)
+
 
 let rec unifyLists l1 l2 = 
-  failwith "implemented in steps 1 and 2"
+  match l1, l2 with 
+  | [], [] -> Some []
+  | h1::t1, h2::t2 ->
+      match unify h1 h2 with
+      | Some s1 ->
+        let t1 = substituteTerms (Map.ofList s1) t1
+        let t2 = substituteTerms (Map.ofList s1) t2
+        match unifyLists t1 t2 with
+        | Some s2 ->
+          let s1 = substituteSubst (Map.ofList s2) s1
+          Some (s1 @ s2)
+        | _ -> None
+      | _ -> None
+  | _ -> None
 
 and unify t1 t2 = 
-  failwith "implemented in step 1"
+  match t1, t2 with 
+  | Atom(a1), Atom(a2) when a1 = a2 -> Some []
+  | Predicate(p1, l1), Predicate(p2, l2) when p1 = p2 -> unifyLists l1 l2
+  | Variable (v), s | s, Variable (v) -> Some [v, s]
+  | _ -> None
 
 // ----------------------------------------------------------------------------
 // Searching the program (database) and variable renaming
@@ -45,39 +68,46 @@ let nextNumber =
   fun () -> n <- n + 1; n
 
 let rec freeVariables term = 
-  failwith "implemented in step 3"
+  match term with
+  | Variable v -> [v]
+  | Atom a -> []
+  | Predicate (p, l) -> l |> List.collect freeVariables
+
 
 let withFreshVariables (clause:Clause) : Clause =
-  failwith "implemented in step 3"
+  let number = nextNumber()
+  let free = freeVariables clause.Head @ (clause.Body |> List.collect freeVariables)
+  let map = free |> List.map (fun n -> (n, Variable (n + number.ToString()))) |> Map.ofList
 
-let query (program:list<Clause>) (query:Term) =
-  failwith "implemented in step 3"
+  rule (substitute map clause.Head) (substituteTerms map clause.Body)
+
+
+let query (program:list<Clause>) (query:Term) 
+    : list<Clause * list<string * Term>> =
+  program |> List.map withFreshVariables |> List.choose (fun clause -> (unify query clause.Head) |> Option.map(fun v -> clause, v))
 
 let rec solve program subst goals = 
   match goals with 
   | g::goals -> 
-      // TODO: We need to solve the goal (term) 'g'. To do so, find all 
-      // matching clauses in the 'program' using 'query' and iterate over
-      // the returned list using 'for clause, newSubst in matches do'.
-      // For each possible solution, we need to add the 'clause.Body' to 
-      // the list of 'goals' and apply the substitution 'newSubst' to the
-      // new concatentated list of 'goals'. Then we need to apply the 
-      // substitution 'newSubst' to the substitution 'subst' we have so far,
-      // append the two and call 'solve' recursively with this new substitution
-      // to solve the new goals.
-      let matches = failwith "TODO"
+      let matches = query program g
       for clause, newSubst in matches do
-        let newGoals = failwith "TODO"
-        solve program (failwith "TODO") (failwith "TODO")
+        let submap = Map.ofList newSubst
+        let newGoals = (goals @ clause.Body) |> substituteTerms submap
+        let subst = subst |> substituteSubst submap
+        solve program (subst @ newSubst) newGoals
 
-  | [] -> 
-    // TODO: We solved all goals, which means 'subst' is a possible solution!
-    // Print 'subst' (either using printfn "%A" or in some nicer way).
-    failwith "not implemented" 
+  | [] -> printfn "Accepted: %A" subst
 
 // ----------------------------------------------------------------------------
 // Querying the British royal family 
 // ----------------------------------------------------------------------------
+
+let print v =
+  try
+    printfn "%A" v
+    printfn "-----------"
+  with
+    | e -> printfn "%A" e.Message
 
 // Some information about the British royal family 
 let family = [ 
@@ -96,10 +126,14 @@ let family = [
 
 // Query: father(X, William)
 // Result #1: [ X -> Charles, ... ]
+print(
 solve family [] [ Predicate("father", [Variable("X"); Atom("William")]) ]
+)
 
 // Query: father(X, Y)
 // Result #1: [ X -> Charles, Y -> William, ... ]
 // Result #2: [ X -> George, Y -> William, ... ]
+print(
 solve family [] [ Predicate("father", [Variable("X"); Variable("Y")]) ]
+)
 

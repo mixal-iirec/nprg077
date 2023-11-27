@@ -1,11 +1,17 @@
 // ----------------------------------------------------------------------------
-// 05 - Pretty printing & adding numbers to TinyProlog
+// 07 - Generating magic squares in TinyProlog
 // ----------------------------------------------------------------------------
 
 type Term = 
   | Atom of string
   | Variable of string
   | Predicate of string * Term list
+  | Call of Term * Term list
+  | Cut
+
+type Result =
+  | Follow of Term list
+  | Last of Term list
 
 type Clause =
   { Head : Term
@@ -26,6 +32,8 @@ let rec substitute (subst:Map<string, Term>) term =
   | Variable v -> if (Map.containsKey v subst) then (substitute subst subst[v]) else Variable v
   | Atom a -> Atom a
   | Predicate (p, l) -> Predicate (p, substituteTerms subst l)
+  | Call(c, l) -> Call (substitute subst c, substituteTerms subst l)
+  | Cut -> Cut
 
 
 and substituteSubst (newSubst:Map<string, Term>) (subst:list<string * Term>) = 
@@ -57,6 +65,10 @@ and unify t1 t2 =
   | Atom(a1), Atom(a2) when a1 = a2 -> Some []
   | Predicate(p1, l1), Predicate(p2, l2) when p1 = p2 -> unifyLists l1 l2
   | Variable (v), s | s, Variable (v) -> Some [v, s]
+
+  | Predicate(p1, args1), Call (Predicate (p2, args2a), args2b)
+  | Call (Predicate (p2, args2a), args2b), Predicate(p1, args1)
+    when p1 = p2 -> unifyLists args1 (args2a @ args2b)
   | _ -> None
 
 // ----------------------------------------------------------------------------
@@ -69,12 +81,21 @@ let rec (|Number|_|) term =
   | Predicate("succ", [Number n]) -> Some (n + 1)
   | _ -> None
 
+let rec (|List|_|) term : option<list<Term>> = 
+  match term with 
+  | Atom("empty") -> Some []
+  | Predicate("cons", [h; List tl]) -> Some (h::tl)
+  | _ -> None
+
 let rec formatTerm term = 
   match term with 
   | Number n -> string n
+  | List(l) -> "[" + (l |> List.map formatTerm |> String.concat ", ") + "]"
   | Atom s -> s
   | Variable v -> v
   | Predicate(p, items) -> p + "(" + (items |> List.map formatTerm |> String.concat ", ") + ")"
+  | Call(c, args) -> formatTerm (Predicate ("call", c::args))
+  | Cut -> "!"
 
 // ----------------------------------------------------------------------------
 // Searching the program (database) and variable renaming
@@ -89,6 +110,8 @@ let rec freeVariables term =
   | Variable v -> [v]
   | Atom a -> []
   | Predicate (p, l) -> l |> List.collect freeVariables
+  | Call (c, l) -> freeVariables c @ (l |> List.collect freeVariables)
+  | Cut -> []
 
 
 let withFreshVariables (clause:Clause) : Clause =
@@ -103,58 +126,43 @@ let query (program:list<Clause>) (query:Term)
     : list<Clause * list<string * Term>> =
   program |> List.map withFreshVariables |> List.choose (fun clause -> (unify query clause.Head) |> Option.map(fun v -> clause, v))
 
-let rec solve program subst goals =
+
+let rec solve program subst goals : seq<Option<list<string * Term>>> = seq {
   match goals with 
+  | Cut::_ ->
+    yield Some subst
+    yield None
   | g::goals -> 
       let matches = query program g
       for clause, newSubst in matches do
         let submap = Map.ofList newSubst
         let newGoals = (goals @ clause.Body) |> substituteTerms submap
         let subst = subst |> substituteSubst submap
-        solve program (subst @ newSubst) newGoals
+        yield! solve program (subst @ newSubst) newGoals
 
-  | [] ->
+  | [] -> yield Some subst
+}
+
+
+let run program query = 
+  printfn "query: %s" (formatTerm query)
+  let vars = Set.ofSeq (freeVariables query)
+  for subst in (solve program [] [query] |> Seq.choose id) do
     printfn "Accepted:"
-    for var, term in subst do printfn "%s := %s" var (formatTerm term)
-
-// ----------------------------------------------------------------------------
-// Querying the British royal family 
-// ----------------------------------------------------------------------------
-
-let family = [ 
-  fact (Predicate("male", [Atom("William")]))
-  fact (Predicate("female", [Atom("Diana")]))
-  fact (Predicate("male", [Atom("Charles")]))
-  fact (Predicate("male", [Atom("George")]))
-  fact (Predicate("parent", [Atom("Diana"); Atom("William")]))
-  fact (Predicate("parent", [Atom("Charles"); Atom("William")]))
-  fact (Predicate("parent", [Atom("William"); Atom("George")]))
-  rule (Predicate("father", [Variable("X"); Variable("Y")])) [
-    Predicate("parent", [Variable("X"); Variable("Y")])
-    Predicate("male", [Variable("X")])
-  ]
-]
-
-// Queries from previous step (now with readable output)
-solve family [] [ Predicate("father", [Variable("X"); Atom("William")]) ]
-solve family [] [ Predicate("father", [Variable("X"); Variable("Y")]) ]
-
+    let subst = subst |> List.filter (fun (n, _) -> Set.contains n vars)
+    for var, term in subst do
+      printfn "%s := %s" var (formatTerm term)
+  printfn "--------------\n\n"
 
 // ----------------------------------------------------------------------------
 // Calculating with numbers
 // ----------------------------------------------------------------------------
 
-// Helper that generates a term representing a number
 let rec num n = 
   match n with
   | 0 -> Atom("zero")
   | n -> Predicate("succ", [num (n - 1)])
 
-
-// Addition and equality testing for Peano arithmetic
-// $ add(zero, X, X)
-// $ add(succ(X), Y, succ(Z)) :- add(X, Y, Z)
-// $ eq(X, X)
 let nums = [
   fact (Predicate("add", [Atom("zero"); Variable("X"); Variable("X")]))
   rule (Predicate("add", [Predicate("succ", [ Variable("X") ]); Variable("Y"); Predicate("succ", [ Variable("Z")]) ])) [
@@ -164,17 +172,68 @@ let nums = [
 ]
 
 
-// Query: add(2, 3, X)
-// Output should include: 'X = 5' 
-//   (and other variables resulting from recursive calls)
-solve nums [] [ Predicate("add", [num 2; num 3; Variable("X")]) ]
+// ----------------------------------------------------------------------------
+// Working with lists
+// ----------------------------------------------------------------------------
 
-// Query: add(2, X, 5)
-// Output should include: 'X = 3' 
-//   (we can use 'add' to calculate subtraction too!)
-solve nums [] [ Predicate("add", [num 2; Variable("X"); num 5]) ]
+let rec makeList l : Term = 
+  match l with
+  | [] -> Atom("empty")
+  | v::l -> Predicate("cons", [v; makeList l])
 
-// Query: add(2, Y, X)
-// Output should include: 'Y = Z??' and 'X = succ(succ(Z??))' 
-//   (with some number for ?? - indicating that this can be any term)
-solve nums [] [ Predicate("add", [num 2; Variable("Y"); Variable("X")]) ]
+let append = [ 
+  fact (Predicate("append", [Atom("empty"); Variable("X"); Variable("X") ]))
+  rule (Predicate("append", [
+    Predicate("cons", [Variable("X"); Variable("Y") ])
+    Variable("Z"); Predicate("cons", [Variable("X"); Variable("W") ])
+  ])) [
+    Predicate("append", [ Variable("Y"); Variable("Z"); Variable("W") ])
+  ]
+]
+
+let l1to4 = makeList [ for i in 1 .. 4 -> num i ]
+let l5to9 = makeList [ for i in 5 .. 9 -> num i ]
+let l1to9 = makeList [ for i in 1 .. 9 -> num i ]
+
+// ----------------------------------------------------------------------------
+// Call and maplist
+// ----------------------------------------------------------------------------
+
+// The Prolog 'call' operation takes a term and a list of arguments
+// and supplies the arguments as additional arguments to the term.
+// So, for example, calling 'call(add(1), 2, X)' becomes 'add(1, 2, X)'
+run nums (Call(Predicate("add", [num 1]), [num 2; Variable "X"]))
+run nums (Call(Predicate("add", [num 1; Variable "X"]), [num 5]))
+
+// This can be used to implement the 'maplist' function:
+// $ maplist(_, [], []).
+// $ maplist(G,[X|Xs],[Y|Ys]) :- maplist(G,Xs,Ys), call(G,X,Y).
+let maplist = [
+  fact (Predicate("maplist", [ Variable("_"); Atom("empty"); Atom("empty") ]))
+  rule (Predicate("maplist", [ 
+    Variable("G")
+    Predicate("cons", [ Variable("X"); Variable("Xs") ])
+    Predicate("cons", [ Variable("Y"); Variable("Ys") ]);  
+  ])) [
+    Predicate("maplist", [ Variable("G"); Variable("Xs"); Variable("Ys") ])
+    Call(Variable("G"), [ Variable("X"); Variable("Y") ])
+  ]
+]
+
+// Query: maplist(add(10), l1to9, Y)
+// Returns: Y -> [11; 12; ..; 19]
+run (nums @ maplist) (Predicate("maplist", 
+  [ Predicate("add", [num 10]); l1to9; Variable("Y") ]))
+
+let permutation =
+  append @ [
+    fact (Predicate("perm", [ Atom("empty"); Atom("empty"); Cut ]))
+    rule (Predicate("perm", [ Variable("L"); Predicate("cons", [Variable("H"); Variable("T")]) ])) [
+      Predicate("append", [ Variable("V"); Predicate("cons", [Variable("H"); Variable("U")]); Variable("L") ])
+      Predicate("append", [ Variable("V"); Variable("U"); Variable("W") ])
+      Predicate("perm", [ Variable("W"); Variable("T") ])
+    ]
+  ]
+
+// DEMO: Generate all permutations of the list [1 .. 4]
+run permutation (Predicate("perm", [l1to4; Variable("X")]))
