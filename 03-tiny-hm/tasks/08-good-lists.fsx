@@ -36,16 +36,52 @@ type Type =
 // ----------------------------------------------------------------------------
 
 let rec occursCheck vcheck ty = 
-  failwith "implemented in steps 2 to 7"
+  match ty with
+  | TyVariable v -> v = vcheck
+  | TyBool -> false
+  | TyNumber -> false
+  | TyUnit -> false
+  | TyList ty -> occursCheck vcheck ty
+  | TyFunction (ty1, ty2) -> occursCheck vcheck ty1 || occursCheck vcheck ty2
+  | TyTuple (ty1, ty2) -> occursCheck vcheck ty1 || occursCheck vcheck ty2
+  | TyUnion (ty1, ty2) -> occursCheck vcheck ty1 || occursCheck vcheck ty2
 
-let rec substType (subst:Map<_, _>) t1 = 
-  failwith "implemented in steps 2 to 7"
+let rec substType (subst:Map<_, _>) ty = 
+  match ty with
+  | TyVariable v -> if (Map.containsKey v subst) then (substType subst subst[v]) else TyVariable v
+  | TyBool -> TyBool
+  | TyNumber -> TyNumber
+  | TyUnit -> TyNumber
+  | TyList ty -> TyList (substType subst ty)
+  | TyFunction (ty1, ty2) -> TyFunction ((substType subst ty1), (substType subst ty2))
+  | TyTuple (ty1, ty2) -> TyTuple ((substType subst ty1), (substType subst ty2))
+  | TyUnion (ty1, ty2) -> TyUnion ((substType subst ty1), (substType subst ty2))
 
 let substConstrs subst cs = 
-  failwith "implemented in step 2"
+  List.map (fun (ty1, ty2) -> (substType subst ty1, substType subst ty2)) cs
  
-let rec solve constraints =
-  failwith "implemented in steps 2 to 7"
+let rec solve cs =
+  match cs with 
+  | [] -> Map.empty
+  | (TyBool, TyBool)::cs -> solve cs
+  | (TyNumber, TyNumber)::cs -> solve cs
+  | (TyUnit, TyUnit)::cs -> solve cs
+  | (ty, TyVariable v)::cs
+  | (TyVariable v, ty)::cs ->
+    printf "%A %A\n" v ty
+    if occursCheck v ty then failwith "Cannot be solved (occurs check)"
+    let cs = substConstrs (Map.ofList [(v, ty)]) cs
+    let subst = solve cs
+    let ty = substType subst ty
+    Map.add v ty subst
+  | (TyList l1, TyList l2)::cs -> solve ((l1, l2)::cs)
+  | (TyFunction (f1ty1, f1ty2), TyFunction (f2ty1, f2ty2))::cs ->
+    solve ((f1ty1, f2ty1)::(f1ty2, f2ty2)::cs) 
+  | (TyTuple (f1ty1, f1ty2), TyTuple (f2ty1, f2ty2))::cs ->
+    solve ((f1ty1, f2ty1)::(f1ty2, f2ty2)::cs) 
+  | (TyUnion (f1ty1, f1ty2), TyUnion (f2ty1, f2ty2))::cs ->
+    solve ((f1ty1, f2ty1)::(f1ty2, f2ty2)::cs) 
+  | (ty1, ty2)::_ -> failwithf "Cannot be solved (Type mismatch `%A` != `%A`)" ty1 ty2
 
 
 // ----------------------------------------------------------------------------
@@ -60,46 +96,98 @@ let newTyVariable =
 
 let rec generate (ctx:TypingContext) e = 
   match e with 
-  | Constant _ -> failwith "implemented in step 3"
-  | Binary("+", e1, e2) -> failwith "implemented in step 3"
-  | Binary("=", e1, e2) -> failwith "implemented in step 3"
-  | Binary(op, _, _) -> failwith "implemented in step 3"
-  | Variable v -> failwith "implemented in step 3"
-  | If(econd, etrue, efalse) -> failwith "implemented in step 3"
+  | Constant _ -> TyNumber, []
+  | Binary("+", e1, e2)
+  | Binary("*", e1, e2) ->
+    let t1, s1 = generate ctx e1
+    let t2, s2 = generate ctx e2
+    TyNumber, s1 @ s2 @ [ t1, TyNumber; t2, TyNumber ]
+  | Binary("=", e1, e2) ->
+    let t1, s1 = generate ctx e1
+    let t2, s2 = generate ctx e2
+    TyBool, s1 @ s2 @ [ t1, t2 ]
+  | Binary(op, _, _) -> failwithf "Binary operator '%s' not supported." op
+  | Variable v -> 
+    if not (Map.containsKey v ctx) then failwithf "Variable %A not defined" v
+    ctx[v], []
+  | If(econd, etrue, efalse) ->
+    let t1, s1 = generate ctx econd
+    let t2, s2 = generate ctx etrue
+    let t3, s3 = generate ctx efalse
+    t2, s1 @ s2 @ s3 @ [ t1, TyBool; t2, t3 ]
+  | Lambda(v, e) ->
+      let ty_arg = newTyVariable()
+      let ctx' = Map.add v ty_arg ctx
+      let t1, s1 = generate ctx' e
+      TyFunction (ty_arg, t1), s1
+  | Application(e1, e2) -> 
+      let t1, s1 = generate ctx e1
+      let t2, s2 = generate ctx e2
+      let ty_res = newTyVariable()
+      ty_res, s1 @ s2 @ [t1, TyFunction(t2, ty_res)]
+  | Let(v, e1, e2) -> generate ctx (Application(Lambda(v, e2), e1))
+  | Tuple(e1, e2) ->
+      let t1, s1 = generate ctx e1
+      let t2, s2 = generate ctx e2
+      TyTuple(t1, t2), s1 @ s2
+  | TupleGet(b, e) ->
+      let t, s = generate ctx e
+      let ty_res = newTyVariable()
+      let ty_bin = newTyVariable()
+      ty_res, s @ [t, (if b then TyTuple(ty_res, ty_bin) else TyTuple(ty_bin, ty_res))]
 
-  | Let(v, e1, e2) -> failwith "implemented in step 4"
-  | Lambda(v, e) -> failwith "implemented in step 4"
-  | Application(e1, e2) -> failwith "implemented in step 4"
+  | Match(e, v, e1, e2) ->
+      let t, s = generate ctx e
+      
+      let ty_v1 = newTyVariable()
+      let ctx' = Map.add v ty_v1 ctx
+      let t1, s1 = generate ctx' e1
 
-  | Tuple(e1, e2) -> failwith "implemented in step 5"
-  | TupleGet(b, e) -> failwith "implemented in step 5"
+      let ty_v2 = newTyVariable()
+      let ctx' = Map.add v ty_v2 ctx
+      let t2, s2 = generate ctx' e2
 
-  | Match(e, v, e1, e2) -> failwith "implemented in step 6"
-  | Case(b, e) -> failwith "implemented in step 6"
+      t1, s @ s1 @ s2 @ [t1, t2; t, TyUnion(ty_v1, ty_v2)]
 
-  | Unit -> failwith "implemented in step 7"
-  | Recursive(v, e1, e2) -> failwith "implemented in step 7"
-  
+  | Case(b, e) ->
+      let t, s = generate ctx e
+      let ty_bin = newTyVariable()
+      let union = if b then TyUnion(t, ty_bin) else TyUnion(ty_bin, t)
+      union, s
+
+  | Unit -> TyUnit, []
+
+  | Recursive(v, e1, e2) ->
+      let ty_v = newTyVariable()
+      let ctx' = Map.add v ty_v ctx
+      let t1, s1 = generate ctx' e1
+      let t2, s2 = generate ctx' e2
+
+      let ty_res = newTyVariable()
+      ty_res, s1 @ s2 @ [t1, TyFunction(t2, ty_res)]
+
   | ListMatch(e, v, e1, e2) -> 
-      // TODO: Type of 'e' ('tylist') needs to be a list of elements ('tyel').
-      // In 'e1', the type of the variable 'v' is then a tuple 'tyel * tylist'.
-      // In 'e2', the type of the variable 'v' is just 'unit'.
-      // To express this, you will need a new type variable for 'tyel'.
-      failwith "not implemented"
+      let t, s = generate ctx e
+      
+      let ty_el = newTyVariable()
+      
+      let ctx' = Map.add v (TyTuple(ty_el, t)) ctx
+      let t1, s1 = generate ctx' e1
+
+      let ctx' = Map.add v TyUnit ctx
+      let t2, s2 = generate ctx' e2
+
+      t1, s @ s1 @ s2 @ [t1, t2; t, TyList(ty_el)]
 
   | ListCase(true, Tuple(ehd, etl)) -> 
-      // TODO: If type of 'ehd' is 'tyel' and type of 'etl' is 'tylist'
-      // then we need a constraint 'tylist = list<tyel>'.
-      failwith "not implemented"
+      let t1, s1 = generate ctx ehd
+      let t2, s2 = generate ctx etl
+      let ty = TyList (t1)
+      ty, s1 @ s2 @ [ty, t2]
 
-  | ListCase(false, Unit) -> 
-      // TODO: The type of '[]' is a list of some type (needs a type variable)
-      failwith "not implemented"
+  | ListCase(false, Unit) -> TyList (newTyVariable()), []
 
-  | ListCase _ ->
-      // TODO: For simplicity, we here restrict the syntax of list constructs.
-      // In general, this is not needed, but it makes the task easier...
-      failwith "unsupported list syntax"
+  | ListCase _ -> failwith "unsupported list syntax"
 
 // ----------------------------------------------------------------------------
 // Putting it together & test cases
@@ -108,8 +196,14 @@ let rec generate (ctx:TypingContext) e =
 let infer e = 
   let typ, constraints = generate Map.empty e 
   let subst = solve constraints
-  let typ = substType (Map.ofList subst) typ
+  let typ = substType subst typ
   typ
+
+let print f =
+  try
+    printf "%A\n" (f())
+  with
+    | e -> printf "%A\n" e.Message
 
 // NOTE: The following is modified from task 7 to use
 // ListCase and ListMatch instead of normal Case and Match.
@@ -120,9 +214,12 @@ let rec makeListExpr l =
   | x::xs -> ListCase(true, Tuple(x, makeListExpr xs))
   | [] -> ListCase(false, Unit)
 
+print (fun () ->
 makeListExpr [ for i in 1 .. 5 -> Constant i ]
 |> infer 
+)
 
+print (fun () ->
 Recursive("map",
   Lambda("f", Lambda("l", 
     ListMatch(
@@ -137,3 +234,6 @@ Recursive("map",
   )),
   Variable("map"))
 |> infer 
+)
+
+// TODO

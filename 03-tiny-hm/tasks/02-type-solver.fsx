@@ -11,26 +11,38 @@ type Type =
   | TyNumber 
   | TyList of Type
 
-let occursCheck vcheck ty =
-  // TODO: Return true of type 'ty' contains variable 'vcheck'
-  failwith "not implemented"
+let rec occursCheck vcheck ty =
+  match ty with
+  | TyVariable v -> v = vcheck
+  | TyBool -> false
+  | TyNumber -> false
+  | TyList ty -> occursCheck vcheck ty
  
 let rec substType (subst:Map<string, Type>) ty = 
-  // TODO: Apply all the specified substitutions to the type 'ty'
-  // (that is, replace all occurrences of 'v' in 'ty' with 'subst.[v]')
-  failwith "not implemented"
+  match ty with
+  | TyVariable v -> if (Map.containsKey v subst) then (substType subst subst[v]) else TyVariable v
+  | TyBool -> TyBool
+  | TyNumber -> TyNumber
+  | TyList ty -> TyList (substType subst ty)
 
 let substConstrs (subst:Map<string, Type>) (cs:list<Type * Type>) = 
-  // TODO: Apply substitution 'subst' to all types in constraints 'cs'
-  failwith "not implemented"
+  List.map (fun (ty1, ty2) -> (substType subst ty1, substType subst ty2)) cs
  
 
 let rec solve cs =
   match cs with 
-  | [] -> []
+  | [] -> Map.empty
+  | (TyBool, TyBool)::cs -> solve cs
   | (TyNumber, TyNumber)::cs -> solve cs
-  // TODO: Fill in the remaining cases! You can closely follow the
-  // example from task 1 - the logic here is exactly the same.
+  | (ty, TyVariable v)::cs
+  | (TyVariable v, ty)::cs ->
+    if occursCheck v ty then failwith "Cannot be solved (occurs check)"
+    let cs = substConstrs (Map.ofList [(v, ty)]) cs
+    let subst = solve cs
+    let ty = substType subst ty
+    Map.add v ty subst
+  | (TyList l1, TyList l2)::cs -> solve ((l1, l2)::cs)
+  | (ty1, ty2)::_ -> failwithf "Cannot be solved (Type mismatch `%A` != `%A`)" ty1 ty2
 
 
 // ----------------------------------------------------------------------------
@@ -38,20 +50,28 @@ let rec solve cs =
 // ----------------------------------------------------------------------------
 
 // Can be solved ('a = number, 'b = list<number>)
-solve  
+printf "%A\n" (solve 
   [ TyList(TyVariable("a")), TyList(TyNumber)
-    TyVariable("b"), TyList(TyVariable("a")) ]
+    TyVariable("b"), TyList(TyVariable("a")) ])
 
 // Cannot be solved (list<'a> <> bool)
-solve  
-  [ TyList(TyVariable("a")), TyVariable("b")
-    TyVariable("b"), TyBool ]
+try
+  solve 
+    [ TyList(TyVariable("a")), TyVariable("b")
+      TyVariable("b"), TyBool ]
+    |> ignore
+with
+  | e -> printf "%A\n" e.Message
 
 // Can be solved ('a = number, 'b = list<number>)
-solve  
+printf "%A\n" (solve 
   [ TyList(TyVariable("a")), TyVariable("b")
-    TyVariable("b"), TyList(TyNumber) ]
+    TyVariable("b"), TyList(TyNumber) ])
 
 // Cannot be solved ('a <> list<'a>)
-solve  
-  [ TyList(TyVariable("a")), TyVariable("a") ]
+try
+  solve 
+    [ TyList(TyVariable("a")), TyVariable("a") ]
+    |> ignore
+with
+  | e -> printf "%A\n" e.Message

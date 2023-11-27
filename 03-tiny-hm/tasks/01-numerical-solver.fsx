@@ -14,23 +14,22 @@ type Number =
 
 
 let rec occursCheck (v:string) (n:Number) = 
-  // TODO: Check if variable 'v' appears anywhere inside 'n'
-  false
+  match n with
+  | Zero -> false
+  | Succ n -> occursCheck v n
+  | Variable v2 -> v = v2
 
 let rec substite (v:string) (subst:Number) (n:Number) =
-  // TODO: Replace all occurrences of variable 'v' in the
-  // number 'n' with the replacement number 'subst'
-  n
+  match n with
+  | Zero -> Zero
+  | Succ n -> Succ (substite v subst n)
+  | Variable v2 -> if v = v2 then subst else Variable v2
 
 let substituteConstraints (v:string) (subst:Number) (constraints:list<Number * Number>) = 
-  // TODO: Substitute 'v' for 'subst' (use 'substitute') in 
-  // all numbers in all the constraints in 'constraints'
-  constraints
+  List.map (fun (n1, n2) -> (substite v subst n1, substite v subst n2)) constraints
 
 let substituteAll (subst:list<string * Number>) (n:Number) =
-  // TODO: Perform all substitutions 
-  // specified  in 'subst' on the number 'n'
-  n
+  List.fold (fun n (v, subst) -> substite v subst n) n subst
 
 let rec solve constraints = 
   match constraints with 
@@ -48,23 +47,30 @@ let rec solve constraints =
       (v, n)::subst
 
 // Should work: x = Zero
-solve 
-  [ Succ(Variable "x"), Succ(Zero) ]
+printf "%A\n" (solve 
+  [ Succ(Variable "x"), Succ(Zero) ])
 
 // Should faild: S(Z) <> Z
-solve 
-  [ Succ(Succ(Zero)), Succ(Zero) ]
+try
+  solve 
+    [ Succ(Succ(Zero)), Succ(Zero) ]
+    |> ignore
+with
+  | e -> printf "%A\n" e.Message
 
 // Not done: Need to substitute x/Z in S(x)
-solve 
+printf "%A\n" (solve 
   [ Succ(Variable "x"), Succ(Zero)
-    Variable "y", Succ(Variable "x") ]
+    Variable "y", Succ(Variable "x") ])
 
 // Not done: Need to substitute z/Z in S(S(z))
-solve 
+printf "%A\n" (solve 
   [ Variable "x", Succ(Succ(Variable "z"))
-    Succ(Variable "z"), Succ(Zero) ]
+    Succ(Variable "z"), Succ(Zero) ])
 
 // Not done: Need occurs check
-solve
-  [ Variable "x", Succ(Variable "x") ]
+try
+  solve 
+    [ Variable "x", Succ(Variable "x") ] |> ignore
+with
+  | e -> printf "%A\n" e.Message
